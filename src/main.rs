@@ -18,19 +18,16 @@ use cash::z::wallet::sdk::rpc::{
     compact_tx_streamer_client::CompactTxStreamerClient, 
     BlockId, 
     BlockRange,
-    CompactBlock,
 };
 
 // Zebra RPC structures
 #[derive(Debug, Deserialize)]
 struct ZebraBlock {
-    height: u64,
     tx: Vec<ZebraTransaction>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ZebraTransaction {
-    txid: String,
     vin: Vec<ZebraVin>,
     vout: Vec<ZebraVout>,
 }
@@ -39,20 +36,12 @@ struct ZebraTransaction {
 struct ZebraVin {
     txid: Option<String>,
     vout: Option<u32>,
-    #[serde(rename = "scriptSig")]
-    script_sig: Option<ScriptSig>,
-    sequence: u32,
 }
 
-#[derive(Debug, Deserialize)]
-struct ScriptSig {
-    hex: String,
-}
 
 #[derive(Debug, Deserialize)]
 struct ZebraVout {
     value: f64,
-    n: u32,
     #[serde(rename = "scriptPubKey")]
     script_pubkey: ScriptPubKey,
 }
@@ -142,77 +131,83 @@ impl TransparentEstimator {
     }
 
     fn estimate_transparent_overhead(&self, block: &ZebraBlock) -> (usize, usize, usize) {
-        // Estimate protobuf size for transparent data based on PR definitions
-        // 
-        // CompactTxIn (from the PR):
-        // - prevout_hash: bytes (32 bytes) -> ~34 bytes encoded (field tag + length + data)
-        // - prevout_n: uint32 -> ~2-5 bytes encoded
-        // - sequence: uint32 -> ~2-5 bytes encoded
-        // - script_sig: bytes (variable) -> ~length+2 bytes encoded
+        // Estimate protobuf size for transparent data based on actual PR definitions:
         //
-        // CompactTxOut (from the PR):
-        // - value: int64 -> ~2-9 bytes encoded
-        // - n: uint32 -> ~2-5 bytes encoded  
-        // - script_pubkey: bytes (variable) -> ~length+2 bytes encoded
+        // message OutPoint {
+        //     bytes txid = 1;        // 32 bytes
+        //     uint32 index = 2;      // varint
+        // }
+        //
+        // message CompactTxIn {
+        //     OutPoint prevout = 1;  // nested message
+        // }
+        //
+        // message TxOut {
+        //     uint32 value = 1;      // varint (note: uint32, not uint64!)
+        //     bytes scriptPubKey = 2; // variable length
+        // }
+        //
+        // CompactTx gets:
+        //     repeated CompactTxIn vin = 7;
+        //     repeated TxOut vout = 8;
 
-        let mut total_input_bytes = 0;
-        let mut total_output_bytes = 0;
+        let mut total_overhead = 0;
         let mut input_count = 0;
         let mut output_count = 0;
 
         for tx in &block.tx {
-            // Estimate CompactTxIn overhead
+            // Estimate CompactTxIn (repeated field in CompactTx)
             for vin in &tx.vin {
-                if vin.txid.is_some() {
+                if let (Some(txid), Some(vout_idx)) = (&vin.txid, &vin.vout) {
                     // Not a coinbase
-                    let mut vin_size = 0;
                     
-                    // prevout_hash: 32 bytes + protobuf overhead (~2 bytes for tag+len)
-                    vin_size += 34;
+                    // OutPoint message size:
+                    let mut outpoint_size = 0;
                     
-                    // prevout_n: varint, typically 1-2 bytes
-                    vin_size += 2;
+                    // Field 1: bytes txid = 32 bytes
+                    // Tag (1 byte) + length varint (1 byte) + 32 bytes
+                    outpoint_size += 1 + 1 + 32;
                     
-                    // sequence: varint, typically 1-2 bytes  
-                    vin_size += 2;
+                    // Field 2: uint32 index (varint)
+                    // Tag (1 byte) + varint value (1-5 bytes, typically 1-2)
+                    outpoint_size += 1 + Self::varint_size(*vout_idx as usize);
                     
-                    // script_sig: variable length
-                    if let Some(ref script) = vin.script_sig {
-                        let script_len = script.hex.len() / 2; // hex to bytes
-                        vin_size += 1 + Self::varint_size(script_len) + script_len;
-                    }
+                    // CompactTxIn wraps OutPoint as field 1
+                    let mut compact_txin_size = 0;
+                    // Tag for field 1 (1 byte) + length of OutPoint + OutPoint data
+                    compact_txin_size += 1 + Self::varint_size(outpoint_size) + outpoint_size;
                     
-                    // Protobuf message overhead (field tag for the repeated field)
-                    vin_size += 1 + Self::varint_size(vin_size);
+                    // This CompactTxIn is in a repeated field (vin = 7) in CompactTx
+                    // Tag for repeated field (1 byte) + length + message
+                    let vin_entry_size = 1 + Self::varint_size(compact_txin_size) + compact_txin_size;
                     
-                    total_input_bytes += vin_size;
+                    total_overhead += vin_entry_size;
                     input_count += 1;
                 }
             }
 
-            // Estimate CompactTxOut overhead
+            // Estimate TxOut (repeated field in CompactTx)
             for vout in &tx.vout {
-                let mut vout_size = 0;
+                let mut txout_size = 0;
                 
-                // value: int64, typically 1-9 bytes as varint
-                vout_size += 9; // worst case
+                // Field 1: uint32 value (varint)
+                let value_zatoshis = (vout.value * 100_000_000.0) as u64;
+                txout_size += 1 + Self::varint_size(value_zatoshis as usize);
                 
-                // n: uint32, typically 1-2 bytes
-                vout_size += 2;
+                // Field 2: bytes scriptPubKey
+                let script_len = vout.script_pubkey.hex.len() / 2; // hex to bytes
+                txout_size += 1 + Self::varint_size(script_len) + script_len;
                 
-                // script_pubkey: variable length
-                let script_len = vout.script_pubkey.hex.len() / 2;
-                vout_size += 1 + Self::varint_size(script_len) + script_len;
+                // This TxOut is in a repeated field (vout = 8) in CompactTx
+                // Tag for repeated field (1 byte) + length + message
+                let vout_entry_size = 1 + Self::varint_size(txout_size) + txout_size;
                 
-                // Protobuf message overhead
-                vout_size += 1 + Self::varint_size(vout_size);
-                
-                total_output_bytes += vout_size;
+                total_overhead += vout_entry_size;
                 output_count += 1;
             }
         }
 
-        (total_input_bytes + total_output_bytes, input_count, output_count)
+        (total_overhead, input_count, output_count)
     }
 
     fn varint_size(value: usize) -> usize {
@@ -327,7 +322,7 @@ impl TransparentEstimator {
         
         // Practical impact examples
         println!("\nPractical impact:");
-        let blocks_per_day = 24 * 60 * 2; // ~2 blocks per minute on Zcash
+        let blocks_per_day = 24 * 60 * 60 / 75; // 1 block every 75 seconds on Zcash
         let daily_current = (total_current as f64 / results.len() as f64) * blocks_per_day as f64;
         let daily_estimated = (total_estimated as f64 / results.len() as f64) * blocks_per_day as f64;
         println!("  Current daily sync (~{} blocks): {:.2} MB", blocks_per_day, daily_current / 1_000_000.0);
