@@ -1,2 +1,37 @@
-/target
-results.csv
+# Rust
+/analyzer/target/
+/analyzer/Cargo.lock
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+env/
+*.egg-info/
+
+# Results
+/results/*
+!/results/.gitkeep
+!/results/README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+
+# Logs
+*.log
