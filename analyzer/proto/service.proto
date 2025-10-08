@@ -31,9 +31,12 @@ message TxFilter {
      bytes hash = 3;        // transaction ID (hash, txid)
 }
 
-// RawTransaction contains the complete transaction data. It also includes the
-// height for the block in which the transaction was included in the main
-// chain, if any (as detailed below).
+// RawTransaction contains the complete transaction data. It also optionally includes
+// the block height in which the transaction was included, or, when returned
+// by GetMempoolStream(), the latest block height.
+//
+// FIXME: the documentation here about mempool status contradicts the documentation
+// for the `height` field. See https://github.com/zcash/librustzcash/issues/1484
 message RawTransaction {
     // The serialized representation of the Zcash transaction.
     bytes data = 1;
@@ -176,7 +179,7 @@ message GetAddressUtxosReplyList {
 }
 
 service CompactTxStreamer {
-    // Return the height of the tip of the best chain
+    // Return the BlockID of the block at the tip of the best chain
     rpc GetLatestBlock(ChainSpec) returns (BlockID) {}
     // Return the compact block corresponding to the given block identifier
     rpc GetBlock(BlockID) returns (CompactBlock) {}
@@ -192,8 +195,9 @@ service CompactTxStreamer {
     // Submit the given transaction to the Zcash network
     rpc SendTransaction(RawTransaction) returns (SendResponse) {}
 
-    // Return the transactions corresponding to the given t-address within the given block range
-    // NB - this method is misnamed, it returns transactions, not transaction IDs.
+    // Return RawTransactions that match the given transparent address filter.
+    //
+    // Note: This function is misnamed, it returns complete `RawTransaction` values, not TxIds.
     // NOTE: this method is deprecated, please use GetTaddressTransactions instead.
     rpc GetTaddressTxids(TransparentAddressBlockFilter) returns (stream RawTransaction) {}
 

@@ -1,3 +1,5 @@
+// Complete working implementation that fetches REAL data from Zebra and lightwalletd
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -20,14 +22,21 @@ use cash::z::wallet::sdk::rpc::{
     BlockRange,
 };
 
-// Zebra RPC structures
+// Import sampling module
+mod sampling;
+use sampling::*;
+
+// Zebra RPC response structures
 #[derive(Debug, Deserialize)]
 struct ZebraBlock {
+    hash: String,
+    height: u64,
     tx: Vec<ZebraTransaction>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ZebraTransaction {
+    txid: String,
     vin: Vec<ZebraVin>,
     vout: Vec<ZebraVout>,
 }
@@ -36,12 +45,20 @@ struct ZebraTransaction {
 struct ZebraVin {
     txid: Option<String>,
     vout: Option<u32>,
+    #[serde(rename = "scriptSig")]
+    script_sig: Option<ScriptSig>,
+    sequence: u32,
 }
 
+#[derive(Debug, Deserialize)]
+struct ScriptSig {
+    hex: String,
+}
 
 #[derive(Debug, Deserialize)]
 struct ZebraVout {
     value: f64,
+    n: u32,
     #[serde(rename = "scriptPubKey")]
     script_pubkey: ScriptPubKey,
 }
@@ -51,9 +68,11 @@ struct ScriptPubKey {
     hex: String,
 }
 
+// Analysis results
 #[derive(Debug, Serialize)]
 struct BlockAnalysis {
     height: u64,
+    era: String,
     current_compact_size: usize,
     estimated_with_transparent: usize,
     delta_bytes: i64,
@@ -76,6 +95,29 @@ impl TransparentEstimator {
             lightwalletd_url,
             http_client: reqwest::Client::new(),
         }
+    }
+
+    async fn get_current_tip(&self) -> Result<u64> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getblockcount",
+            "params": [],
+            "id": 1
+        });
+
+        let response: serde_json::Value = self
+            .http_client
+            .post(&self.zebra_rpc_url)
+            .json(&request)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        let tip = response["result"].as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get block count"))?;
+        
+        Ok(tip)
     }
 
     async fn get_compact_block_from_lightwalletd(&self, height: u64) -> Result<Vec<u8>> {
@@ -142,6 +184,8 @@ impl TransparentEstimator {
         //     OutPoint prevout = 1;  // nested message
         // }
         //
+        // For coinbase, we'll estimate a fixed overhead since the .proto isn't finalized yet
+        //
         // message TxOut {
         //     uint32 value = 1;      // varint (note: uint32, not uint64!)
         //     bytes scriptPubKey = 2; // variable length
@@ -158,8 +202,8 @@ impl TransparentEstimator {
         for tx in &block.tx {
             // Estimate CompactTxIn (repeated field in CompactTx)
             for vin in &tx.vin {
-                if let (Some(txid), Some(vout_idx)) = (&vin.txid, &vin.vout) {
-                    // Not a coinbase
+                if let (Some(_txid), Some(vout_idx)) = (&vin.txid, &vin.vout) {
+                    // Regular transparent input (not a coinbase)
                     
                     // OutPoint message size:
                     let mut outpoint_size = 0;
@@ -182,6 +226,22 @@ impl TransparentEstimator {
                     let vin_entry_size = 1 + Self::varint_size(compact_txin_size) + compact_txin_size;
                     
                     total_overhead += vin_entry_size;
+                    input_count += 1;
+                } else {
+                    // Coinbase input
+                    // Since the .proto isn't finalized, we estimate a fixed size
+                    // Typical coinbase: ~40-100 bytes of data + sequence
+                    // Conservative estimate for CompactTxIn with coinbase:
+                    // - Field tag for coinbase data: 1 byte
+                    // - Length prefix: 1 byte (for typical 40-100 byte coinbase)
+                    // - Coinbase data: ~70 bytes average
+                    // - Field tag for sequence: 1 byte
+                    // - Sequence value: 4 bytes
+                    // - Repeated field overhead: 1 byte tag + 1 byte length
+                    // Total: ~79 bytes
+                    
+                    const COINBASE_COMPACT_TXIN_SIZE: usize = 79;
+                    total_overhead += COINBASE_COMPACT_TXIN_SIZE;
                     input_count += 1;
                 }
             }
@@ -241,6 +301,7 @@ impl TransparentEstimator {
 
         Ok(BlockAnalysis {
             height,
+            era: String::new(), // Will be set by analyze_blocks
             current_compact_size: current_size,
             estimated_with_transparent: estimated_size,
             delta_bytes: delta,
@@ -251,22 +312,27 @@ impl TransparentEstimator {
         })
     }
 
-    async fn analyze_range(&self, start: u64, end: u64) -> Result<Vec<BlockAnalysis>> {
+    async fn analyze_blocks(&self, heights: &[u64]) -> Result<Vec<BlockAnalysis>> {
         let mut results = Vec::new();
+        let total = heights.len();
+        let eras = Era::zcash_eras(*heights.last().unwrap_or(&2_400_000));
 
-        for height in start..=end {
+        for (i, &height) in heights.iter().enumerate() {
+            if i % 10 == 0 {
+                println!("Progress: {}/{} ({:.1}%)", i, total, (i as f64 / total as f64) * 100.0);
+            }
+
             match self.analyze_block(height).await {
-                Ok(analysis) => {
+                Ok(mut analysis) => {
+                    analysis.era = Era::get_era_for_height(height, &eras);
                     println!(
-                        "Block {}: current={} bytes, estimated={} bytes, delta=+{} bytes ({:.2}%), tx={}, tin={}, tout={}",
+                        "Block {}: current={} bytes, estimated={} bytes, delta=+{} bytes ({:.2}%), era={}",
                         height,
                         analysis.current_compact_size,
                         analysis.estimated_with_transparent,
                         analysis.delta_bytes,
                         analysis.delta_percent,
-                        analysis.tx_count,
-                        analysis.transparent_inputs,
-                        analysis.transparent_outputs
+                        analysis.era
                     );
                     results.push(analysis);
                 }
@@ -278,6 +344,7 @@ impl TransparentEstimator {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
 
+        println!("Progress: {}/{} (100.0%)", total, total);
         Ok(results)
     }
 
@@ -322,7 +389,7 @@ impl TransparentEstimator {
         
         // Practical impact examples
         println!("\nPractical impact:");
-        let blocks_per_day = 24 * 60 * 60 / 75; // 1 block every 75 seconds on Zcash
+        let blocks_per_day = 1152; // Post-Blossom (75s blocks)
         let daily_current = (total_current as f64 / results.len() as f64) * blocks_per_day as f64;
         let daily_estimated = (total_estimated as f64 / results.len() as f64) * blocks_per_day as f64;
         println!("  Current daily sync (~{} blocks): {:.2} MB", blocks_per_day, daily_current / 1_000_000.0);
@@ -335,31 +402,99 @@ impl TransparentEstimator {
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     
-    if args.len() < 5 {
-        eprintln!("Usage: {} <lightwalletd-grpc-url> <zebrad-rpc-url> <start-height> <end-height> [output.csv]", args[0]);
-        eprintln!("Example: {} http://localhost:9067 http://localhost:8232 2400000 2401000 results.csv", args[0]);
+    if args.len() < 4 {
+        eprintln!("Usage: {} <lightwalletd-grpc-url> <zebrad-rpc-url> <mode> [output.csv]", args[0]);
+        eprintln!();
+        eprintln!("Modes:");
+        eprintln!("  range <start> <end>     - Analyze specific block range");
+        eprintln!("  quick                   - Quick sampling (~1500 blocks)");
+        eprintln!("  recommended             - Balanced sampling (~5000 blocks)");
+        eprintln!("  thorough                - Thorough sampling (~11000 blocks)");
+        eprintln!("  equal                   - Equal samples per era (~4000 blocks)");
+        eprintln!("  proportional            - Proportional to era size (~5000 blocks)");
+        eprintln!("  weighted                - Weighted toward recent (~5000 blocks)");
+        eprintln!();
+        eprintln!("Examples:");
+        eprintln!("  {} http://127.0.0.1:9067 http://127.0.0.1:8232 range 2400000 2401000", args[0]);
+        eprintln!("  {} http://127.0.0.1:9067 http://127.0.0.1:8232 recommended results.csv", args[0]);
         std::process::exit(1);
     }
 
     let lightwalletd_url = &args[1];
     let zebra_rpc_url = &args[2];
-    let start_height: u64 = args[3].parse()?;
-    let end_height: u64 = args[4].parse()?;
-    let output_file = args.get(5).map(|s| s.as_str()).unwrap_or("analysis.csv");
+    let mode = &args[3];
 
+    // Get current tip from Zebra
     let estimator = TransparentEstimator::new(
         zebra_rpc_url.to_string(),
         lightwalletd_url.to_string(),
     );
-
-    println!("Analyzing blocks {} to {}...", start_height, end_height);
-    println!("Fetching real compact blocks from lightwalletd: {}", lightwalletd_url);
-    println!("Fetching full blocks from Zebrad: {}", zebra_rpc_url);
+    
+    let current_tip = estimator.get_current_tip().await?;
+    println!("Current blockchain tip: {}", current_tip);
     println!();
 
-    let results = estimator.analyze_range(start_height, end_height).await?;
+    let (blocks, output_file) = match mode.as_str() {
+        "range" => {
+            if args.len() < 6 {
+                eprintln!("Error: range mode requires <start> <end>");
+                std::process::exit(1);
+            }
+            let start: u64 = args[4].parse()?;
+            let end: u64 = args[5].parse()?;
+            let output = args.get(6).map(|s| s.as_str()).unwrap_or("results.csv");
+            ((start..=end).collect(), output.to_string())
+        }
+        "quick" => {
+            let sampler = create_quick_sampler(current_tip);
+            println!("{}", sampler.describe());
+            let output = args.get(4).map(|s| s.as_str()).unwrap_or("quick_sample.csv");
+            (sampler.generate_samples(), output.to_string())
+        }
+        "recommended" => {
+            let sampler = create_recommended_sampler(current_tip);
+            println!("{}", sampler.describe());
+            let output = args.get(4).map(|s| s.as_str()).unwrap_or("recommended_sample.csv");
+            (sampler.generate_samples(), output.to_string())
+        }
+        "thorough" => {
+            let sampler = create_thorough_sampler(current_tip);
+            println!("{}", sampler.describe());
+            let output = args.get(4).map(|s| s.as_str()).unwrap_or("thorough_sample.csv");
+            (sampler.generate_samples(), output.to_string())
+        }
+        "equal" => {
+            let sampler = create_equal_sampler(current_tip);
+            println!("{}", sampler.describe());
+            let output = args.get(4).map(|s| s.as_str()).unwrap_or("equal_sample.csv");
+            (sampler.generate_samples(), output.to_string())
+        }
+        "proportional" => {
+            let sampler = create_proportional_sampler(current_tip);
+            println!("{}", sampler.describe());
+            let output = args.get(4).map(|s| s.as_str()).unwrap_or("proportional_sample.csv");
+            (sampler.generate_samples(), output.to_string())
+        }
+        "weighted" => {
+            let sampler = create_weighted_sampler(current_tip);
+            println!("{}", sampler.describe());
+            let output = args.get(4).map(|s| s.as_str()).unwrap_or("weighted_sample.csv");
+            (sampler.generate_samples(), output.to_string())
+        }
+        _ => {
+            eprintln!("Error: Unknown mode '{}'", mode);
+            std::process::exit(1);
+        }
+    };
 
-    estimator.write_csv(&results, output_file)?;
+    println!("Analyzing {} blocks...", blocks.len());
+    println!("Fetching real compact blocks from lightwalletd: {}", lightwalletd_url);
+    println!("Fetching full blocks from Zebra: {}", zebra_rpc_url);
+    println!();
+
+    let results = estimator.analyze_blocks(&blocks).await?;
+
+    estimator.write_csv(&results, &output_file)?;
     println!("\nDetailed results written to: {}", output_file);
 
     estimator.print_summary(&results);

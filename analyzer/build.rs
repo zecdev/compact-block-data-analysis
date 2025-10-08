@@ -1,6 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
-        .build_server(false) // We only need the client
+        .build_server(false)
         .compile(
             &["proto/service.proto", "proto/compact_formats.proto"],
             &["proto/"],

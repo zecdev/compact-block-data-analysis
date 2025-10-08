@@ -100,7 +100,6 @@ zebrad start
 Verify RPC is accessible:
 ```bash
 curl -X POST http://127.0.0.1:8232 \
-  -H "Content-Type: application/json" \
   -d '{"method":"getblockcount","params":[],"id":1}'
 ```
 
