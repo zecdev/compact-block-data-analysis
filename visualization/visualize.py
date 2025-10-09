@@ -47,38 +47,72 @@ class CompactBlockAnalyzer:
         print(f"\nAll visualizations saved to: {output_path}")
         
     def plot_distribution(self, filename):
-        """Histogram of overhead percentage distribution"""
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        """Histogram of overhead distribution - both percentage and absolute"""
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         
+        # Top row: Percentage overhead
         # Histogram with KDE
-        axes[0].hist(self.df['delta_percent'], bins=50, alpha=0.7, 
+        axes[0, 0].hist(self.df['delta_percent'], bins=50, alpha=0.7, 
                      edgecolor='black', density=True, label='Distribution')
         
         # Add KDE
         kde_x = np.linspace(self.df['delta_percent'].min(), 
                            self.df['delta_percent'].max(), 100)
         kde = stats.gaussian_kde(self.df['delta_percent'])
-        axes[0].plot(kde_x, kde(kde_x), 'r-', linewidth=2, label='KDE')
+        axes[0, 0].plot(kde_x, kde(kde_x), 'r-', linewidth=2, label='KDE')
         
         # Add median and mean
         median = self.df['delta_percent'].median()
         mean = self.df['delta_percent'].mean()
-        axes[0].axvline(median, color='green', linestyle='--', 
+        axes[0, 0].axvline(median, color='green', linestyle='--', 
                        linewidth=2, label=f'Median: {median:.1f}%')
-        axes[0].axvline(mean, color='orange', linestyle='--', 
+        axes[0, 0].axvline(mean, color='orange', linestyle='--', 
                        linewidth=2, label=f'Mean: {mean:.1f}%')
         
-        axes[0].set_xlabel('Overhead Percentage (%)')
-        axes[0].set_ylabel('Density')
-        axes[0].set_title('Distribution of Compact Block Overhead')
-        axes[0].legend()
-        axes[0].grid(True, alpha=0.3)
+        axes[0, 0].set_xlabel('Overhead Percentage (%)')
+        axes[0, 0].set_ylabel('Density')
+        axes[0, 0].set_title('Distribution of Overhead (Percentage)')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True, alpha=0.3)
         
-        # Box plot
-        axes[1].boxplot(self.df['delta_percent'], vert=True)
-        axes[1].set_ylabel('Overhead Percentage (%)')
-        axes[1].set_title('Overhead Distribution (Box Plot)')
-        axes[1].grid(True, alpha=0.3)
+        # Box plot - percentage
+        axes[0, 1].boxplot(self.df['delta_percent'], vert=True)
+        axes[0, 1].set_ylabel('Overhead Percentage (%)')
+        axes[0, 1].set_title('Overhead Distribution (Box Plot - Percentage)')
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # Bottom row: Absolute overhead in KB
+        self.df['delta_kb'] = self.df['delta_bytes'] / 1000
+        
+        # Histogram with KDE - absolute
+        axes[1, 0].hist(self.df['delta_kb'], bins=50, alpha=0.7,
+                       edgecolor='black', density=True, label='Distribution', color='coral')
+        
+        # Add KDE
+        kde_x_kb = np.linspace(self.df['delta_kb'].min(),
+                              self.df['delta_kb'].max(), 100)
+        kde_kb = stats.gaussian_kde(self.df['delta_kb'])
+        axes[1, 0].plot(kde_x_kb, kde_kb(kde_x_kb), 'r-', linewidth=2, label='KDE')
+        
+        # Add median and mean
+        median_kb = self.df['delta_kb'].median()
+        mean_kb = self.df['delta_kb'].mean()
+        axes[1, 0].axvline(median_kb, color='green', linestyle='--',
+                          linewidth=2, label=f'Median: {median_kb:.1f} KB')
+        axes[1, 0].axvline(mean_kb, color='orange', linestyle='--',
+                          linewidth=2, label=f'Mean: {mean_kb:.1f} KB')
+        
+        axes[1, 0].set_xlabel('Overhead (KB per block)')
+        axes[1, 0].set_ylabel('Density')
+        axes[1, 0].set_title('Distribution of Overhead (Absolute Size)')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True, alpha=0.3)
+        
+        # Box plot - absolute
+        axes[1, 1].boxplot(self.df['delta_kb'], vert=True)
+        axes[1, 1].set_ylabel('Overhead (KB per block)')
+        axes[1, 1].set_title('Overhead Distribution (Box Plot - Absolute)')
+        axes[1, 1].grid(True, alpha=0.3)
         
         plt.tight_layout()
         plt.savefig(filename, dpi=300, bbox_inches='tight')
@@ -149,57 +183,88 @@ class CompactBlockAnalyzer:
         print(f"  ✓ Time series chart saved: {filename}")
         
     def plot_by_era(self, filename):
-        """Compare distributions across eras"""
-        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        """Compare distributions across eras - both percentage and absolute"""
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
         
-        # Box plot by era
         era_order = ['sapling', 'blossom', 'heartwood', 'canopy', 'nu5', 'nu6']
         available_eras = [e for e in era_order if e in self.df['era'].values]
         
-        box_data = [self.df[self.df['era'] == era]['delta_percent'].values 
-                    for era in available_eras]
-        
         colors = ['lightgreen', 'lightyellow', 'lightpink', 'lightcoral', 'lavender', 'peachpuff']
-        bp = axes[0, 0].boxplot(box_data, labels=available_eras, patch_artist=True)
-        for patch, color in zip(bp['boxes'], colors[:len(available_eras)]):
+        
+        # Add KB column
+        self.df['delta_kb'] = self.df['delta_bytes'] / 1000
+        
+        # Top row: Percentage overhead
+        # Box plot by era - percentage
+        box_data_pct = [self.df[self.df['era'] == era]['delta_percent'].values 
+                        for era in available_eras]
+        
+        bp1 = axes[0, 0].boxplot(box_data_pct, labels=available_eras, patch_artist=True)
+        for patch, color in zip(bp1['boxes'], colors[:len(available_eras)]):
             patch.set_facecolor(color)
         
         axes[0, 0].set_ylabel('Overhead (%)')
-        axes[0, 0].set_title('Overhead Distribution by Era')
+        axes[0, 0].set_title('Overhead Distribution by Era (Percentage)')
         axes[0, 0].grid(True, alpha=0.3)
         axes[0, 0].tick_params(axis='x', rotation=45)
         
-        # Violin plot
+        # Violin plot - percentage
         if len(available_eras) > 0:
             era_df = self.df[self.df['era'].isin(available_eras)]
             sns.violinplot(data=era_df, x='era', y='delta_percent', 
                           order=available_eras, ax=axes[0, 1])
             axes[0, 1].set_ylabel('Overhead (%)')
-            axes[0, 1].set_title('Overhead Distribution by Era (Violin Plot)')
+            axes[0, 1].set_title('Overhead Distribution by Era (Violin - Percentage)')
             axes[0, 1].grid(True, alpha=0.3)
             axes[0, 1].tick_params(axis='x', rotation=45)
         
-        # Bar chart of means
-        era_stats = self.df.groupby('era')['delta_percent'].agg(['mean', 'std'])
-        era_stats = era_stats.reindex(available_eras)
+        # Bar chart of means - percentage
+        era_stats_pct = self.df.groupby('era')['delta_percent'].agg(['mean', 'std'])
+        era_stats_pct = era_stats_pct.reindex(available_eras)
         
         x = np.arange(len(available_eras))
-        axes[1, 0].bar(x, era_stats['mean'], yerr=era_stats['std'], 
+        axes[0, 2].bar(x, era_stats_pct['mean'], yerr=era_stats_pct['std'], 
                       capsize=5, alpha=0.7, color=colors[:len(available_eras)])
-        axes[1, 0].set_xticks(x)
-        axes[1, 0].set_xticklabels(available_eras, rotation=45)
-        axes[1, 0].set_ylabel('Mean Overhead (%)')
-        axes[1, 0].set_title('Average Overhead by Era (with Std Dev)')
-        axes[1, 0].grid(True, alpha=0.3)
+        axes[0, 2].set_xticks(x)
+        axes[0, 2].set_xticklabels(available_eras, rotation=45)
+        axes[0, 2].set_ylabel('Mean Overhead (%)')
+        axes[0, 2].set_title('Average Overhead by Era (Percentage)')
+        axes[0, 2].grid(True, alpha=0.3)
         
-        # Sample sizes
-        era_counts = self.df['era'].value_counts().reindex(available_eras)
-        axes[1, 1].bar(available_eras, era_counts.values, 
-                      color=colors[:len(available_eras)])
-        axes[1, 1].set_ylabel('Number of Samples')
-        axes[1, 1].set_title('Sample Distribution by Era')
-        axes[1, 1].tick_params(axis='x', rotation=45)
-        axes[1, 1].grid(True, alpha=0.3)
+        # Bottom row: Absolute KB overhead
+        # Box plot by era - KB
+        box_data_kb = [self.df[self.df['era'] == era]['delta_kb'].values 
+                       for era in available_eras]
+        
+        bp2 = axes[1, 0].boxplot(box_data_kb, labels=available_eras, patch_artist=True)
+        for patch, color in zip(bp2['boxes'], colors[:len(available_eras)]):
+            patch.set_facecolor(color)
+        
+        axes[1, 0].set_ylabel('Overhead (KB per block)')
+        axes[1, 0].set_title('Overhead Distribution by Era (Absolute)')
+        axes[1, 0].grid(True, alpha=0.3)
+        axes[1, 0].tick_params(axis='x', rotation=45)
+        
+        # Violin plot - KB
+        if len(available_eras) > 0:
+            sns.violinplot(data=era_df, x='era', y='delta_kb', 
+                          order=available_eras, ax=axes[1, 1], color='coral')
+            axes[1, 1].set_ylabel('Overhead (KB per block)')
+            axes[1, 1].set_title('Overhead Distribution by Era (Violin - Absolute)')
+            axes[1, 1].grid(True, alpha=0.3)
+            axes[1, 1].tick_params(axis='x', rotation=45)
+        
+        # Bar chart of means - KB
+        era_stats_kb = self.df.groupby('era')['delta_kb'].agg(['mean', 'std'])
+        era_stats_kb = era_stats_kb.reindex(available_eras)
+        
+        axes[1, 2].bar(x, era_stats_kb['mean'], yerr=era_stats_kb['std'], 
+                      capsize=5, alpha=0.7, color=colors[:len(available_eras)])
+        axes[1, 2].set_xticks(x)
+        axes[1, 2].set_xticklabels(available_eras, rotation=45)
+        axes[1, 2].set_ylabel('Mean Overhead (KB per block)')
+        axes[1, 2].set_title('Average Overhead by Era (Absolute)')
+        axes[1, 2].grid(True, alpha=0.3)
         
         plt.tight_layout()
         plt.savefig(filename, dpi=300, bbox_inches='tight')
@@ -321,26 +386,39 @@ class CompactBlockAnalyzer:
         avg_with_transparent = self.df['estimated_with_transparent'].mean()
         avg_delta = avg_with_transparent - avg_current
         
-        # Daily sync (assume 2880 blocks per day)
-        blocks_per_day = 2880
+        # Calculate blocks per day based on current network (post-Blossom)
+        # Post-Blossom (after block 653,600): 75s blocks = 1,152 blocks/day
+        # This is what matters for current light clients
+        blocks_per_day = 1152
+        
         daily_current_mb = (avg_current * blocks_per_day) / 1_000_000
         daily_with_mb = (avg_with_transparent * blocks_per_day) / 1_000_000
+        daily_delta_mb = daily_with_mb - daily_current_mb
         
+        # Daily sync with absolute delta
         axes[0, 0].bar(['Current', 'With\nTransparent'], 
                       [daily_current_mb, daily_with_mb],
                       color=['steelblue', 'coral'])
         axes[0, 0].set_ylabel('MB')
-        axes[0, 0].set_title('Daily Sync Bandwidth\n(~2880 blocks)')
+        axes[0, 0].set_title(f'Daily Sync Bandwidth\n(~{blocks_per_day} blocks/day)')
         axes[0, 0].grid(True, alpha=0.3, axis='y')
         
         for i, v in enumerate([daily_current_mb, daily_with_mb]):
             axes[0, 0].text(i, v + 1, f'{v:.1f} MB', 
                           ha='center', va='bottom', fontweight='bold')
         
-        # Full sync (assume 2.4M blocks)
-        total_blocks = len(self.df) * 500  # Estimate full chain
+        # Add delta annotation
+        axes[0, 0].text(0.5, max(daily_current_mb, daily_with_mb) * 0.5, 
+                       f'Δ = +{daily_delta_mb:.1f} MB\n({(daily_delta_mb/daily_current_mb)*100:.1f}%)',
+                       ha='center', fontsize=12, fontweight='bold',
+                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.3))
+        
+        # Full sync (estimate based on current tip)
+        max_height = self.df['height'].max()
+        total_blocks = max_height  # Approximate total blocks
         full_current_gb = (avg_current * total_blocks) / 1_000_000_000
         full_with_gb = (avg_with_transparent * total_blocks) / 1_000_000_000
+        full_delta_gb = full_with_gb - full_current_gb
         
         axes[0, 1].bar(['Current', 'With\nTransparent'], 
                       [full_current_gb, full_with_gb],
@@ -350,29 +428,40 @@ class CompactBlockAnalyzer:
         axes[0, 1].grid(True, alpha=0.3, axis='y')
         
         for i, v in enumerate([full_current_gb, full_with_gb]):
-            axes[0, 1].text(i, v + 0.1, f'{v:.1f} GB', 
+            axes[0, 1].text(i, v + 0.1, f'{v:.2f} GB', 
                           ha='center', va='bottom', fontweight='bold')
         
-        # Mobile data cost (assume $10/GB)
-        cost_per_gb = 10
-        daily_cost_current = (daily_current_mb / 1000) * cost_per_gb
-        daily_cost_with = (daily_with_mb / 1000) * cost_per_gb
-        monthly_cost_current = daily_cost_current * 30
-        monthly_cost_with = daily_cost_with * 30
+        # Add delta annotation
+        axes[0, 1].text(0.5, max(full_current_gb, full_with_gb) * 0.5,
+                       f'Δ = +{full_delta_gb:.2f} GB\n({(full_delta_gb/full_current_gb)*100:.1f}%)',
+                       ha='center', fontsize=12, fontweight='bold',
+                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.3))
         
-        x = np.arange(2)
+        # Absolute delta chart - use MB consistently
+        x = np.arange(3)
         width = 0.35
-        axes[1, 0].bar(x - width/2, [daily_cost_current, monthly_cost_current], 
-                      width, label='Current', color='steelblue')
-        axes[1, 0].bar(x + width/2, [daily_cost_with, monthly_cost_with], 
-                      width, label='With Transparent', color='coral')
         
-        axes[1, 0].set_ylabel('Cost (USD)')
-        axes[1, 0].set_title('Mobile Data Cost\n(@$10/GB)')
+        # Calculate for different time periods (all in MB)
+        daily_delta_mb = daily_delta_mb
+        weekly_delta_mb = daily_delta_mb * 7
+        monthly_delta_mb = daily_delta_mb * 30
+        
+        deltas = [daily_delta_mb, weekly_delta_mb, monthly_delta_mb]
+        labels = [f'Daily\n({blocks_per_day} blocks)', 'Weekly\n(7 days)', 'Monthly\n(30 days)']
+        
+        bars = axes[1, 0].bar(x, deltas, color='coral', alpha=0.7)
+        axes[1, 0].set_ylabel('Additional Bandwidth (MB)')
+        axes[1, 0].set_title('Absolute Bandwidth Increase\n(Transparent Data Overhead)')
         axes[1, 0].set_xticks(x)
-        axes[1, 0].set_xticklabels(['Daily', 'Monthly'])
-        axes[1, 0].legend()
+        axes[1, 0].set_xticklabels(labels)
         axes[1, 0].grid(True, alpha=0.3, axis='y')
+        
+        # Add value labels
+        for i, (bar, val) in enumerate(zip(bars, deltas)):
+            height = bar.get_height()
+            axes[1, 0].text(bar.get_x() + bar.get_width()/2., height,
+                          f'+{val:.2f} MB',
+                          ha='center', va='bottom', fontweight='bold')
         
         # Sync time (assume 5 Mbps connection)
         bandwidth_mbps = 5
@@ -380,8 +469,11 @@ class CompactBlockAnalyzer:
         
         daily_time_current = daily_current_mb / bandwidth_mb_per_sec / 60  # minutes
         daily_time_with = daily_with_mb / bandwidth_mb_per_sec / 60
+        daily_time_delta = daily_time_with - daily_time_current
+        
         full_time_current = full_current_gb * 1000 / bandwidth_mb_per_sec / 3600  # hours
         full_time_with = full_with_gb * 1000 / bandwidth_mb_per_sec / 3600
+        full_time_delta = full_time_with - full_time_current
         
         x = np.arange(2)
         axes[1, 1].bar(x - width/2, [daily_time_current, full_time_current], 
@@ -395,6 +487,15 @@ class CompactBlockAnalyzer:
         axes[1, 1].set_xticklabels(['Daily\n(minutes)', 'Full\n(hours)'])
         axes[1, 1].legend()
         axes[1, 1].grid(True, alpha=0.3, axis='y')
+        
+        # Add delta annotations
+        for i, delta in enumerate([daily_time_delta, full_time_delta]):
+            y_pos = max([daily_time_current, full_time_current][i], 
+                       [daily_time_with, full_time_with][i]) * 1.05
+            unit = 'min' if i == 0 else 'hrs'
+            axes[1, 1].text(i, y_pos, f'+{delta:.1f} {unit}',
+                          ha='center', fontsize=10, fontweight='bold',
+                          bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.3))
         
         plt.tight_layout()
         plt.savefig(filename, dpi=300, bbox_inches='tight')
