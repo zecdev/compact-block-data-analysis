@@ -448,6 +448,7 @@ async fn main() -> Result<()> {
         eprintln!("  equal                   - Equal samples per era (~4000 blocks)");
         eprintln!("  proportional            - Proportional to era size (~5000 blocks)");
         eprintln!("  weighted                - Weighted toward recent (~5000 blocks)");
+        eprintln!("  density <every_n>       - Every Nth block across all eras");
         eprintln!("  complete <start> <end>  - Analyze every block in range (no sampling)");
         eprintln!();
         eprintln!("Examples:");
@@ -457,6 +458,10 @@ async fn main() -> Result<()> {
         );
         eprintln!(
             "  {} http://127.0.0.1:9067 http://127.0.0.1:8232 recommended results.csv",
+            args[0]
+        );
+        eprintln!(
+            "  {} http://127.0.0.1:9067 http://127.0.0.1:8232 density 1000 density.csv",
             args[0]
         );
         eprintln!(
