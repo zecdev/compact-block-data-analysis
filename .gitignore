@@ -3,6 +3,9 @@
 /analyzer/Cargo.lock
 **/*.rs.bk
 
+# Proto files
+/analyzer/proto/*.proto
+
 # Python
 __pycache__/
 *.py[cod]
