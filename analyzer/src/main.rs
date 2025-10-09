@@ -133,6 +133,7 @@ impl TransparentEstimator {
                 height: height as u64,
                 hash: vec![],
             }),
+            pool_types: vec![], // Empty means all pools (default behavior)
         });
 
         // Get the block stream (will have just one block)
@@ -447,6 +448,7 @@ async fn main() -> Result<()> {
         eprintln!("  equal                   - Equal samples per era (~4000 blocks)");
         eprintln!("  proportional            - Proportional to era size (~5000 blocks)");
         eprintln!("  weighted                - Weighted toward recent (~5000 blocks)");
+        eprintln!("  complete <start> <end>  - Analyze every block in range (no sampling)");
         eprintln!();
         eprintln!("Examples:");
         eprintln!(
@@ -455,6 +457,10 @@ async fn main() -> Result<()> {
         );
         eprintln!(
             "  {} http://127.0.0.1:9067 http://127.0.0.1:8232 recommended results.csv",
+            args[0]
+        );
+        eprintln!(
+            "  {} http://127.0.0.1:9067 http://127.0.0.1:8232 complete 2800000 2800100",
             args[0]
         );
         std::process::exit(1);
@@ -481,6 +487,18 @@ async fn main() -> Result<()> {
             let start: u64 = args[4].parse()?;
             let end: u64 = args[5].parse()?;
             let output = args.get(6).map(|s| s.as_str()).unwrap_or("results.csv");
+            ((start..=end).collect(), output.to_string())
+        }
+        "complete" => {
+            if args.len() < 6 {
+                eprintln!("Error: complete mode requires <start> <end>");
+                std::process::exit(1);
+            }
+            let start: u64 = args[4].parse()?;
+            let end: u64 = args[5].parse()?;
+            let output = args.get(6).map(|s| s.as_str()).unwrap_or("complete.csv");
+            println!("Complete analysis: every block from {} to {}", start, end);
+            println!("Total blocks: {}", end - start + 1);
             ((start..=end).collect(), output.to_string())
         }
         "quick" => {
