@@ -23,11 +23,11 @@ impl Era {
             Era {
                 name: "blossom".to_string(),
                 start: 653_600,
-                end: 903_799,
+                end: 902_999,
             },
             Era {
                 name: "heartwood".to_string(),
-                start: 903_800,
+                start: 903_000,
                 end: 1_046_399,
             },
             Era {
