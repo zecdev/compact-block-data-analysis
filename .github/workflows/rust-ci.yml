@@ -1,0 +1,26 @@
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Install protobuf compiler
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+    
+    - name: Fetch proto files
+      run: ./scripts/fetch_protos.sh
+    
+    - name: Build
+      working-directory: ./analyzer
+      run: cargo build --release --verbose
+    
+    - name: Run tests
+      working-directory: ./analyzer
+      run: cargo test --verbose
