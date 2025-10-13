@@ -371,11 +371,12 @@ mod tests {
 
     #[test]
     fn test_equal_per_era() {
-        let sampler = create_equal_sampler(2_400_000);
+        // Use a tip that's well into NU6 era
+        let sampler = create_equal_sampler(2_900_000);
         let samples = sampler.generate_samples();
 
-        // Should have roughly 4000 samples (1000 per era)
-        assert!(samples.len() >= 3800 && samples.len() <= 4200);
+        // Should have roughly 6000 samples (1000 per era × 6 eras)
+        assert!(samples.len() >= 5500 && samples.len() <= 6500);
 
         // Samples should be sorted
         assert!(samples.windows(2).all(|w| w[0] < w[1]));
@@ -383,19 +384,21 @@ mod tests {
 
     #[test]
     fn test_hybrid_recent() {
-        let sampler = create_recommended_sampler(2_400_000);
+        let sampler = create_recommended_sampler(2_900_000);
         let samples = sampler.generate_samples();
 
         println!("{}", sampler.describe());
 
-        // Should have base + recent samples
-        assert!(samples.len() >= 4500 && samples.len() <= 5500);
+        // Base: 750 × 6 eras = 4500
+        // Recent: 2000 additional
+        // Total could be up to 6500 (with some overlap deduplication via BTreeSet)
+        assert!(samples.len() >= 4000 && samples.len() <= 7000);
     }
 
     #[test]
     fn test_reproducibility() {
-        let sampler1 = create_equal_sampler(2_400_000);
-        let sampler2 = create_equal_sampler(2_400_000);
+        let sampler1 = create_equal_sampler(2_900_000);
+        let sampler2 = create_equal_sampler(2_900_000);
 
         let samples1 = sampler1.generate_samples();
         let samples2 = sampler2.generate_samples();

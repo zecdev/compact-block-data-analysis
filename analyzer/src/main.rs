@@ -124,6 +124,7 @@ impl TransparentEstimator {
         let mut client = CompactTxStreamerClient::connect(self.lightwalletd_url.clone()).await?;
 
         // Request a single block by creating a range with start=end=height
+        // NO pool_types field - using main branch proto
         let request = tonic::Request::new(BlockRange {
             start: Some(BlockId {
                 height: height as u64,
@@ -133,7 +134,6 @@ impl TransparentEstimator {
                 height: height as u64,
                 hash: vec![],
             }),
-            pool_types: vec![], // Empty means all pools (default behavior)
         });
 
         // Get the block stream (will have just one block)
@@ -504,7 +504,12 @@ async fn main() -> Result<()> {
             let output = args.get(6).map(|s| s.as_str()).unwrap_or("complete.csv");
             println!("Complete analysis: every block from {} to {}", start, end);
             println!("Total blocks: {}", end - start + 1);
-            ((start..=end).collect(), output.to_string())
+            let sampler = Sampler::new(
+                SamplingStrategy::Complete { start, end },
+                current_tip,
+                Some(42),
+            );
+            (sampler.generate_samples(), output.to_string())
         }
         "density" => {
             if args.len() < 5 {
