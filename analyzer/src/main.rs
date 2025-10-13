@@ -27,14 +27,11 @@ use sampling::*;
 // Zebra RPC response structures
 #[derive(Debug, Deserialize)]
 struct ZebraBlock {
-    hash: String,
-    height: u64,
     tx: Vec<ZebraTransaction>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ZebraTransaction {
-    txid: String,
     vin: Vec<ZebraVin>,
     vout: Vec<ZebraVout>,
 }
@@ -43,20 +40,11 @@ struct ZebraTransaction {
 struct ZebraVin {
     txid: Option<String>,
     vout: Option<u32>,
-    #[serde(rename = "scriptSig")]
-    script_sig: Option<ScriptSig>,
-    sequence: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct ScriptSig {
-    hex: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct ZebraVout {
     value: f64,
-    n: u32,
     #[serde(rename = "scriptPubKey")]
     script_pubkey: ScriptPubKey,
 }
@@ -127,11 +115,11 @@ impl TransparentEstimator {
         // NO pool_types field - using main branch proto
         let request = tonic::Request::new(BlockRange {
             start: Some(BlockId {
-                height: height as u64,
+                height,
                 hash: vec![],
             }),
             end: Some(BlockId {
-                height: height as u64,
+                height,
                 hash: vec![],
             }),
         });
