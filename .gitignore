@@ -2,7 +2,7 @@
 /analyzer/target/
 /analyzer/Cargo.lock
 **/*.rs.bk
-
+target/
 # Proto files
 /analyzer/proto/*.proto
 
