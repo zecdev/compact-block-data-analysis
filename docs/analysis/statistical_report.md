@@ -32,10 +32,10 @@
 
 ### Cumulative
 
-![Cumulative](docs/analysis/cumulative.png)
+![Cumulative](cumulative.png)
 
 ### Distribution
-![Distribution](docs/analysis/distribution.png)
+![Distribution](distribution.png)
 
 ## Confidence Intervals (95%)
 
@@ -44,8 +44,8 @@
 
 ## Statistics by Era
 
-![Statistics by era](docs/analysis/by_era.png)
-![heatmap by era](docs/analysis/heatmap.png)
+![Statistics by era](by_era.png)
+![heatmap by era](heatmap.png)
 
 | Era | Count | Mean | Std Dev | Median | Min | Max |
 |-----|-------|------|---------|--------|-----|-----|
@@ -70,10 +70,10 @@
 - **With transparent:** 4.32 MB
 - **Additional:** 1.86 MB (75.9%)
 
-![bandwidth impact](docs/analysis/bandwidth_impact.png)
+![bandwidth impact](bandwidth_impact.png)
 ## Correlations
 
-![correlations](docs/analysis/correlations.png)
+![correlations](correlations.png)
 
 | Variables | Correlation (r) |
 |-----------|----------------|
