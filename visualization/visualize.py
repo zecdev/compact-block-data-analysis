@@ -736,129 +736,135 @@ class CompactBlockAnalyzer:
         print(f"  ✓ Heatmap saved: {filename}")
 
     def generate_report(self, filename):
-        """Generate statistical report"""
+        """Generate statistical report in Markdown format"""
         with open(filename, "w") as f:
-            f.write("=" * 80 + "\n")
-            f.write("STATISTICAL ANALYSIS REPORT\n")
-            f.write("Zcash Compact Block Transparent Data Overhead\n")
-            f.write("=" * 80 + "\n\n")
+            f.write("# Statistical Analysis Report\n\n")
+            f.write("**Zcash Compact Block Transparent Data Overhead**\n\n")
+            f.write("---\n\n")
 
             # Summary statistics
-            f.write("SUMMARY STATISTICS\n")
-            f.write("-" * 80 + "\n")
-            f.write(f"Total blocks analyzed: {len(self.df):,}\n")
+            f.write("## Summary Statistics\n\n")
+            f.write(f"- **Total blocks analyzed:** {len(self.df):,}\n")
             f.write(
-                f"Block height range: {self.df['height'].min():,} - {self.df['height'].max():,}\n\n"
+                f"- **Block height range:** {self.df['height'].min():,} - {self.df['height'].max():,}\n\n"
             )
 
             # Overhead statistics
-            f.write("OVERHEAD PERCENTAGE\n")
-            f.write(f"  Mean:   {self.df['delta_percent'].mean():>8.2f}%\n")
-            f.write(f"  Median: {self.df['delta_percent'].median():>8.2f}%\n")
-            f.write(f"  Std Dev:{self.df['delta_percent'].std():>8.2f}%\n")
-            f.write(f"  Min:    {self.df['delta_percent'].min():>8.2f}%\n")
-            f.write(f"  Max:    {self.df['delta_percent'].max():>8.2f}%\n\n")
+            f.write("## Overhead Percentage\n\n")
+            f.write("| Metric | Value |\n")
+            f.write("|--------|-------|\n")
+            f.write(f"| Mean   | {self.df['delta_percent'].mean():.2f}% |\n")
+            f.write(f"| Median | {self.df['delta_percent'].median():.2f}% |\n")
+            f.write(f"| Std Dev| {self.df['delta_percent'].std():.2f}% |\n")
+            f.write(f"| Min    | {self.df['delta_percent'].min():.2f}% |\n")
+            f.write(f"| Max    | {self.df['delta_percent'].max():.2f}% |\n\n")
 
             # Percentiles
-            f.write("PERCENTILES\n")
+            f.write("## Percentiles\n\n")
+            f.write("| Percentile | Overhead |\n")
+            f.write("|------------|----------|\n")
             for p in [25, 50, 75, 90, 95, 99]:
                 value = np.percentile(self.df["delta_percent"], p)
-                f.write(f"  P{p:>2}: {value:>8.2f}%\n")
+                f.write(f"| P{p} | {value:.2f}% |\n")
             f.write("\n")
 
             # Confidence intervals
-            f.write("CONFIDENCE INTERVALS (95%)\n")
+            f.write("## Confidence Intervals (95%)\n\n")
             mean = self.df["delta_percent"].mean()
             std_err = stats.sem(self.df["delta_percent"])
             ci = stats.t.interval(0.95, len(self.df) - 1, loc=mean, scale=std_err)
-            f.write(f"  Mean overhead: {mean:.2f}% ± {(ci[1]-mean):.2f}%\n")
-            f.write(f"  Range: [{ci[0]:.2f}%, {ci[1]:.2f}%]\n\n")
+            f.write(f"- **Mean overhead:** {mean:.2f}% ± {(ci[1]-mean):.2f}%\n")
+            f.write(f"- **Range:** [{ci[0]:.2f}%, {ci[1]:.2f}%]\n\n")
 
             # By era
-            f.write("STATISTICS BY ERA\n")
-            f.write("-" * 80 + "\n")
+            f.write("## Statistics by Era\n\n")
             if "era" in self.df.columns:
-                era_stats = self.df.groupby("era").agg(
-                    {"delta_percent": ["count", "mean", "std", "median", "min", "max"]}
-                )
-                f.write(era_stats.to_string())
-                f.write("\n\n")
+                f.write("| Era | Count | Mean | Std Dev | Median | Min | Max |\n")
+                f.write("|-----|-------|------|---------|--------|-----|-----|\n")
+
+                era_order = ["sapling", "blossom", "heartwood", "canopy", "nu5", "nu6"]
+                for era in era_order:
+                    if era in self.df["era"].values:
+                        era_data = self.df[self.df["era"] == era]["delta_percent"]
+                        f.write(
+                            f"| {era.capitalize()} | {len(era_data):,} | {era_data.mean():.2f}% | "
+                            f"{era_data.std():.2f}% | {era_data.median():.2f}% | "
+                            f"{era_data.min():.2f}% | {era_data.max():.2f}% |\n"
+                        )
+                f.write("\n")
 
             # Bandwidth impact
-            f.write("PRACTICAL BANDWIDTH IMPACT\n")
-            f.write("-" * 80 + "\n")
+            f.write("## Practical Bandwidth Impact\n\n")
 
             avg_current = self.df["current_compact_size"].mean()
             avg_with = self.df["estimated_with_transparent"].mean()
             avg_delta = avg_with - avg_current
 
-            blocks_per_day = 2880
+            f.write("### Average Block Sizes\n\n")
+            f.write(f"- **Current:** {avg_current/1000:.2f} KB\n")
+            f.write(f"- **With transparent:** {avg_with/1000:.2f} KB\n")
+            f.write(f"- **Delta:** {avg_delta/1000:.2f} KB\n\n")
+
+            blocks_per_day = 1152
             daily_current_mb = (avg_current * blocks_per_day) / 1_000_000
             daily_with_mb = (avg_with * blocks_per_day) / 1_000_000
             daily_delta_mb = daily_with_mb - daily_current_mb
 
-            f.write(f"Average block sizes:\n")
-            f.write(f"  Current:         {avg_current/1000:>10.2f} KB\n")
-            f.write(f"  With transparent:{avg_with/1000:>10.2f} KB\n")
-            f.write(f"  Delta:           {avg_delta/1000:>10.2f} KB\n\n")
-
-            f.write(f"Daily sync (~{blocks_per_day} blocks):\n")
-            f.write(f"  Current:         {daily_current_mb:>10.2f} MB\n")
-            f.write(f"  With transparent:{daily_with_mb:>10.2f} MB\n")
+            f.write(f"### Daily Sync (~{blocks_per_day} blocks)\n\n")
+            f.write(f"- **Current:** {daily_current_mb:.2f} MB\n")
+            f.write(f"- **With transparent:** {daily_with_mb:.2f} MB\n")
             f.write(
-                f"  Additional:      {daily_delta_mb:>10.2f} MB ({(daily_delta_mb/daily_current_mb)*100:.1f}%)\n\n"
+                f"- **Additional:** {daily_delta_mb:.2f} MB ({(daily_delta_mb/daily_current_mb)*100:.1f}%)\n\n"
             )
 
             # Correlations
-            f.write("CORRELATIONS\n")
-            f.write("-" * 80 + "\n")
+            f.write("## Correlations\n\n")
             corr_inputs = self.df["transparent_inputs"].corr(self.df["delta_bytes"])
             corr_outputs = self.df["transparent_outputs"].corr(self.df["delta_bytes"])
             corr_tx = self.df["tx_count"].corr(self.df["delta_percent"])
 
-            f.write(f"  Transparent inputs vs delta:  r = {corr_inputs:>6.3f}\n")
-            f.write(f"  Transparent outputs vs delta: r = {corr_outputs:>6.3f}\n")
-            f.write(f"  Transaction count vs %%:       r = {corr_tx:>6.3f}\n\n")
+            f.write("| Variables | Correlation (r) |\n")
+            f.write("|-----------|----------------|\n")
+            f.write(f"| Transparent inputs → delta bytes | {corr_inputs:.3f} |\n")
+            f.write(f"| Transparent outputs → delta bytes | {corr_outputs:.3f} |\n")
+            f.write(f"| Transaction count → overhead % | {corr_tx:.3f} |\n\n")
 
             # Recommendations
-            f.write("DECISION FRAMEWORK\n")
-            f.write("-" * 80 + "\n")
+            f.write("## Decision Framework\n\n")
             median_overhead = self.df["delta_percent"].median()
             p95_overhead = np.percentile(self.df["delta_percent"], 95)
 
-            f.write(f"Median overhead: {median_overhead:.1f}%\n")
-            f.write(f"95th percentile: {p95_overhead:.1f}%\n\n")
+            f.write(f"- **Median overhead:** {median_overhead:.1f}%\n")
+            f.write(f"- **95th percentile:** {p95_overhead:.1f}%\n\n")
 
             if median_overhead < 20:
-                f.write("RECOMMENDATION: LOW IMPACT\n")
+                f.write("### ✅ Recommendation: LOW IMPACT\n\n")
                 f.write(
-                    "  The overhead is relatively small (<20%). Consider making transparent\n"
+                    "The overhead is relatively small (<20%). Consider making transparent "
                 )
                 f.write(
-                    "  data part of the default GetBlockRange method. This would:\n"
+                    "data part of the default GetBlockRange method. This would:\n\n"
                 )
-                f.write("  - Simplify the API (single method)\n")
-                f.write("  - Provide feature parity with full nodes\n")
-                f.write("  - Have minimal bandwidth impact on users\n")
+                f.write("- Simplify the API (single method)\n")
+                f.write("- Provide feature parity with full nodes\n")
+                f.write("- Have minimal bandwidth impact on users\n")
             elif median_overhead < 50:
-                f.write("RECOMMENDATION: MODERATE IMPACT\n")
-                f.write("  The overhead is significant (20-50%). Consider:\n")
-                f.write("  - Separate opt-in method for transparent data\n")
-                f.write("  - Pool-based filtering (as in librustzcash PR #1781)\n")
-                f.write("  - Let clients choose based on their needs\n")
-                f.write("  - Important for mobile/bandwidth-limited users\n")
+                f.write("### ⚠️ Recommendation: MODERATE IMPACT\n\n")
+                f.write("The overhead is significant (20-50%). Consider:\n\n")
+                f.write("- Separate opt-in method for transparent data\n")
+                f.write("- Pool-based filtering (as in librustzcash PR #1781)\n")
+                f.write("- Let clients choose based on their needs\n")
+                f.write("- Important for mobile/bandwidth-limited users\n")
             else:
-                f.write("RECOMMENDATION: HIGH IMPACT\n")
-                f.write("  The overhead is substantial (>50%). Strongly consider:\n")
-                f.write("  - Separate method required\n")
-                f.write("  - Clear opt-in for clients needing transparent data\n")
-                f.write("  - Critical for mobile and bandwidth-limited users\n")
-                f.write("  - May significantly impact sync times\n")
+                f.write("### 🚨 Recommendation: HIGH IMPACT\n\n")
+                f.write("The overhead is substantial (>50%). Strongly consider:\n\n")
+                f.write("- Separate method required\n")
+                f.write("- Clear opt-in for clients needing transparent data\n")
+                f.write("- Critical for mobile and bandwidth-limited users\n")
+                f.write("- May significantly impact sync times\n")
 
-            f.write("\n")
-            f.write("=" * 80 + "\n")
-            f.write("End of Report\n")
-            f.write("=" * 80 + "\n")
+            f.write("\n---\n\n")
+            f.write("*Report generated by Compact Block Analyzer*\n")
 
         print(f"  ✓ Statistical report saved: {filename}")
 
