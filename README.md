@@ -1,5 +1,8 @@
 # Compact Block Analyzer for Zcash
 
+**Warning: this is an statistical experiment. this code is not suitable for production whatsoever. USE AT YOUR OWN RISK**
+**Warning: this code has not been audited or reviewed. USE AT YOUR OWN RISK**
+
 A tool to analyze the bandwidth impact of adding transparent transaction data (`CompactTxIn` and `TxOut`) to Zcash's compact block protocol.
 
 ## Overview
